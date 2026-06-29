@@ -376,12 +376,12 @@ When `fuse_permute_dispatch=True` or `fuse_unpermute_combine=True`, the `build()
 
 ### 6.2 Cache Management
 
-Each EP rank uses a separate cache directory, preventing concurrent ranks from renaming the same kernel file over one another. The directory is stable across process restarts, so a warm-up can be reused by a later launch with the same build revision, EP size, rank, and world size.
+Each EP rank uses a separate cache directory, preventing concurrent ranks from renaming the same kernel file over one another. The directory is stable across process restarts, so a warm-up can be reused by a later launch with the same build revision, EP size, node rank, rank, and world size.
 
 **Cache Directory:**
 - Environment variable: `HYBRID_EP_CACHE_DIR`
 - Default base: `$HOME/.deepep/hybrid_ep/jit` (fallback: `/tmp/.deepep/hybrid_ep/jit`)
-- Namespace: `commit-<build-commit>/ep-size-<EP_SIZE>/rank-<RANK>-world-<WORLD_SIZE>`
+- Namespace: `commit-<build-commit>/ep-size-<EP_SIZE>/node-<NODE_RANK>/rank-<RANK>-world-<WORLD_SIZE>`
 - If `RANK` or `WORLD_SIZE` is unavailable, the final component falls back to `proc-<pid>` to preserve concurrent-process safety.
 
 **Reusing Cache:**

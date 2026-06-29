@@ -21,7 +21,7 @@ inline std::string get_env(std::string name) {
     return std::string(env);
 }
 
-std::string get_jit_dir(int ep_size) {
+std::string get_jit_dir(int ep_size, int node_rank) {
     std::string cache_dir = get_env("HYBRID_EP_CACHE_DIR");
     if (cache_dir.empty()) {
         struct passwd* pw = getpwuid(getuid());
@@ -32,11 +32,12 @@ std::string get_jit_dir(int ep_size) {
             cache_dir = "/tmp";  // Fallback 
         }
     }
-    // Isolate concurrent ranks while keeping a stable build/EP/rank scope for
-    // warmed caches that survive process restarts.
+    // Isolate concurrent ranks while keeping a stable build/EP/node/rank scope
+    // for warmed caches that survive process restarts.
     std::string base_jit = cache_dir + "/.deepep/hybrid_ep/jit";
     std::string scoped_jit = base_jit + "/commit-" + DEEP_EP_GIT_COMMIT +
-                             "/ep-size-" + std::to_string(ep_size);
+                             "/ep-size-" + std::to_string(ep_size) +
+                             "/node-" + std::to_string(node_rank);
     std::string rank = get_env("RANK");
     std::string world_size = get_env("WORLD_SIZE");
     if (!rank.empty() && !world_size.empty()) {
@@ -47,9 +48,9 @@ std::string get_jit_dir(int ep_size) {
     return scoped_jit + "/proc-" + std::to_string(getpid());
 }
 
-NVCCCompiler::NVCCCompiler(std::string base_path, std::string comm_id, int ep_size):
+NVCCCompiler::NVCCCompiler(std::string base_path, std::string comm_id, int ep_size, int node_rank):
     base_path(base_path), comm_id(comm_id) {
-    jit_dir = get_jit_dir(ep_size);
+    jit_dir = get_jit_dir(ep_size, node_rank);
 
     nvcc_path = get_env("CUDA_HOME") + "/bin/nvcc";
 
@@ -274,9 +275,9 @@ std::string NVCCCompiler::get_combine_code(HybridEpConfigInstance config) {
 }
 
 KernelCache::KernelCache(int node_rank, int local_rank, int ep_size, std::string base_path, std::string comm_id, bool load_cached_kernels):
-node_rank(node_rank), local_rank(local_rank), nvcc_compiler(base_path, comm_id, ep_size) {
+node_rank(node_rank), local_rank(local_rank), nvcc_compiler(base_path, comm_id, ep_size, node_rank) {
     // Load all cached kernels from the cache directory
-    jit_dir = get_jit_dir(ep_size);
+    jit_dir = get_jit_dir(ep_size, node_rank);
     std::filesystem::create_directories(jit_dir);
     if(load_cached_kernels) {
         for (const auto& entry : std::filesystem::directory_iterator(jit_dir)) {

@@ -23,7 +23,7 @@
 class NVCCCompiler{
 public:
     // Init the flags required by nvcc compiler
-    NVCCCompiler(std::string base_path, std::string comm_id, int ep_size);
+    NVCCCompiler(std::string base_path, std::string comm_id, int ep_size, int node_rank);
 
     // Generate the code for jit compile
     std::string get_metadata_preprocessing_code(HybridEpConfigInstance config);
