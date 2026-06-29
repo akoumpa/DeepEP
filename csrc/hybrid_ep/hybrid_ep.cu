@@ -47,7 +47,7 @@ HybridEPBuffer::HybridEPBuffer(
   bool enable_custom_allgather
 ) : process_group(process_group),
     buffer_config(config),
-    executor(local_rank, node_rank, base_path, get_comm_id(process_group), load_cached_kernels, enable_custom_allgather)
+    executor(local_rank, node_rank, group_size, base_path, get_comm_id(process_group), load_cached_kernels, enable_custom_allgather)
 {
     buffer_config.num_of_dispatch_chunks = (buffer_config.max_num_of_tokens_per_rank - 1) / buffer_config.num_of_tokens_per_chunk_dispatch_api + 1;
     buffer_config.num_of_combine_chunks = (buffer_config.max_num_of_tokens_per_rank - 1) / buffer_config.num_of_tokens_per_chunk_combine_api + 1;

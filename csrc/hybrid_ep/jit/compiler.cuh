@@ -23,7 +23,7 @@
 class NVCCCompiler{
 public:
     // Init the flags required by nvcc compiler
-    NVCCCompiler(std::string base_path, std::string comm_id);
+    NVCCCompiler(std::string base_path, std::string comm_id, int ep_size);
 
     // Generate the code for jit compile
     std::string get_metadata_preprocessing_code(HybridEpConfigInstance config);
@@ -66,7 +66,7 @@ private:
 
 class KernelCache{
 public:
-    KernelCache(int node_rank, int local_rank, std::string base_path, std::string comm_id, bool load_cached_kernels);
+    KernelCache(int node_rank, int local_rank, int ep_size, std::string base_path, std::string comm_id, bool load_cached_kernels);
 
     void run_preprocess_kernel(
         HybridEpConfigInstance config, 

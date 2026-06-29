@@ -6,7 +6,10 @@
 #include <cstdint>
 #include <nvtx3/nvToolsExt.h>
 
-Executor::Executor(int local_rank, int node_rank, std::string base_path, std::string comm_id, bool load_cached_kernels, bool enable_custom_allgather) : local_rank(local_rank), node_rank(node_rank), kernel_cache(node_rank, local_rank, base_path, comm_id, load_cached_kernels), enable_custom_allgather(enable_custom_allgather) {}  
+Executor::Executor(int local_rank, int node_rank, int ep_size, std::string base_path, std::string comm_id, bool load_cached_kernels, bool enable_custom_allgather)
+    : local_rank(local_rank), node_rank(node_rank),
+      kernel_cache(node_rank, local_rank, ep_size, base_path, comm_id, load_cached_kernels),
+      enable_custom_allgather(enable_custom_allgather) {}
 
 void Executor::set_intra_node_buffers(IntraNodeDispatchBuffers *intra_node_dispatch_buffers, IntraNodeCombineBuffers *intra_node_combine_buffers) {
     this->intra_node_dispatch_buffers = intra_node_dispatch_buffers;

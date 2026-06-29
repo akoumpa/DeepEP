@@ -42,6 +42,15 @@ def to_nvcc_gencode(s: str) -> str:
     return " ".join(flags)
 
 
+def get_git_commit() -> str:
+    try:
+        return subprocess.check_output(
+            ['git', 'rev-parse', '--short=12', 'HEAD'], text=True, stderr=subprocess.DEVNULL
+        ).strip()
+    except (OSError, subprocess.CalledProcessError):
+        return 'unknown'
+
+
 def get_extension_hybrid_ep_cpp():
     current_dir = os.path.dirname(os.path.abspath(__file__))
     enable_multinode = os.getenv("HYBRID_EP_MULTINODE", "0").strip().lower() in {"1", "true", "t", "yes", "y", "on"}
@@ -85,6 +94,7 @@ def get_extension_hybrid_ep_cpp():
 
     # Add dependency for jit
     compile_args["nvcc"].append(f'-DSM_ARCH="{os.environ["TORCH_CUDA_ARCH_LIST"]}"')
+    compile_args["nvcc"].append(f'-DDEEP_EP_GIT_COMMIT="{get_git_commit()}"')
     # Copy the hybrid backend code to python package for JIT compilation
     shutil.copytree(
         os.path.join(current_dir, "csrc/hybrid_ep/backend/"),
@@ -140,7 +150,7 @@ def get_extension_hybrid_ep_cpp():
             rdma_core_dir = os.getenv("RDMA_CORE_HOME", "")
             nccl_dir = os.path.join(current_dir, "third-party/nccl")
             compile_args["nvcc"].append(f"-DRDMA_CORE_HOME=\"{rdma_core_dir}\"")
-            extra_link_args.append(f"-l:libnvidia-ml.so.1")
+            extra_link_args.append("-l:libnvidia-ml.so.1")
 
             subprocess.run(["git", "submodule", "update", "--init", "--recursive"], cwd=current_dir)
             subprocess.run(
@@ -182,7 +192,7 @@ def get_extension_hybrid_ep_cpp():
             ]
 
 
-    print(f'Build summary:')
+    print('Build summary:')
     print(f' > Sources: {sources}')
     print(f' > Includes: {include_dirs}')
     print(f' > Libraries: {libraries}')
@@ -286,7 +296,7 @@ def get_extension_deep_ep_cpp():
         extra_compile_args['nvcc_dlink'] = nvcc_dlink
 
     # Summary
-    print(f'Build summary:')
+    print('Build summary:')
     print(f' > Sources: {sources}')
     print(f' > Includes: {include_dirs}')
     print(f' > Libraries: {library_dirs}')
@@ -308,12 +318,8 @@ def get_extension_deep_ep_cpp():
     return extension_deep_ep_cpp
 
 if __name__ == '__main__':
-    # noinspection PyBroadException
-    try:
-        cmd = ['git', 'rev-parse', '--short', 'HEAD']
-        revision = '+' + subprocess.check_output(cmd).decode('ascii').rstrip()
-    except Exception as _:
-        revision = ''
+    git_commit = get_git_commit()
+    revision = f'+{git_commit}' if git_commit != 'unknown' else ''
 
     setuptools.setup(
         name='deep_ep',

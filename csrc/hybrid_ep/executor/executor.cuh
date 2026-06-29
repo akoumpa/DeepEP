@@ -37,7 +37,7 @@ struct HandleImpl {
 
 class Executor {
 public:
-    Executor(int local_rank, int node_rank, std::string base_path, std::string comm_id, bool load_cached_kernels, bool enable_custom_allgather);
+    Executor(int local_rank, int node_rank, int ep_size, std::string base_path, std::string comm_id, bool load_cached_kernels, bool enable_custom_allgather);
 
     struct DispatchArgs {
         // Input tensors

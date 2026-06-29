@@ -376,11 +376,13 @@ When `fuse_permute_dispatch=True` or `fuse_unpermute_combine=True`, the `build()
 
 ### 6.2 Cache Management
 
-All ranks compile identical kernels, but use unique filenames (including `node_rank`, `local_rank`, and timestamp) to avoid conflicts. After compilation, `std::filesystem::rename` atomically merges them into a single cached `.so`.
+Each EP rank uses a separate cache directory, preventing concurrent ranks from renaming the same kernel file over one another. The directory is stable across process restarts, so a warm-up can be reused by a later launch with the same build revision, EP size, rank, and world size.
 
 **Cache Directory:**
 - Environment variable: `HYBRID_EP_CACHE_DIR`
-- Default: `$HOME/.deepep/hybrid_ep/jit` (fallback: `/tmp/.deepep/hybrid_ep/jit`)
+- Default base: `$HOME/.deepep/hybrid_ep/jit` (fallback: `/tmp/.deepep/hybrid_ep/jit`)
+- Namespace: `commit-<build-commit>/ep-size-<EP_SIZE>/rank-<RANK>-world-<WORLD_SIZE>`
+- If `RANK` or `WORLD_SIZE` is unavailable, the final component falls back to `proc-<pid>` to preserve concurrent-process safety.
 
 **Reusing Cache:**
 Set `load_cached_kernels=True` in `HybridEPBuffer.__init__()` to load pre-compiled kernels from the cache directory, avoiding recompilation overhead.

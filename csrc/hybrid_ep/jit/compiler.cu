@@ -9,6 +9,10 @@
 #include <sys/types.h>
 #include <stdexcept>
 
+#ifndef DEEP_EP_GIT_COMMIT
+#define DEEP_EP_GIT_COMMIT "unknown"
+#endif
+
 inline std::string get_env(std::string name) {
     const char* env = std::getenv(name.c_str());
     if (env == nullptr) {
@@ -17,7 +21,7 @@ inline std::string get_env(std::string name) {
     return std::string(env);
 }
 
-std::string get_jit_dir() {
+std::string get_jit_dir(int ep_size) {
     std::string cache_dir = get_env("HYBRID_EP_CACHE_DIR");
     if (cache_dir.empty()) {
         struct passwd* pw = getpwuid(getuid());
@@ -28,18 +32,24 @@ std::string get_jit_dir() {
             cache_dir = "/tmp";  // Fallback 
         }
     }
-    // Use process-specific subdirectory to avoid race conditions when multiple
-    // processes compile kernels concurrently (e.g., torch.multiprocessing.spawn).
-    // Without this, one process could overwrite key.so while another loads it,
-    // causing "bad any_cast" when the wrong kernel type is loaded.
+    // Isolate concurrent ranks while keeping a stable build/EP/rank scope for
+    // warmed caches that survive process restarts.
     std::string base_jit = cache_dir + "/.deepep/hybrid_ep/jit";
-    std::string proc_jit = base_jit + "/proc-" + std::to_string(getpid());
-    return proc_jit;
+    std::string scoped_jit = base_jit + "/commit-" + DEEP_EP_GIT_COMMIT +
+                             "/ep-size-" + std::to_string(ep_size);
+    std::string rank = get_env("RANK");
+    std::string world_size = get_env("WORLD_SIZE");
+    if (!rank.empty() && !world_size.empty()) {
+        return scoped_jit + "/rank-" + rank + "-world-" + world_size;
+    }
+
+    // Keep process isolation for callers that do not provide a distributed rank.
+    return scoped_jit + "/proc-" + std::to_string(getpid());
 }
 
-NVCCCompiler::NVCCCompiler(std::string base_path, std::string comm_id): 
+NVCCCompiler::NVCCCompiler(std::string base_path, std::string comm_id, int ep_size):
     base_path(base_path), comm_id(comm_id) {
-    jit_dir = get_jit_dir();
+    jit_dir = get_jit_dir(ep_size);
 
     nvcc_path = get_env("CUDA_HOME") + "/bin/nvcc";
 
@@ -263,10 +273,10 @@ std::string NVCCCompiler::get_combine_code(HybridEpConfigInstance config) {
       )";
 }
 
-KernelCache::KernelCache(int node_rank, int local_rank, std::string base_path, std::string comm_id, bool load_cached_kernels): 
-node_rank(node_rank), local_rank(local_rank), nvcc_compiler(base_path, comm_id) {
+KernelCache::KernelCache(int node_rank, int local_rank, int ep_size, std::string base_path, std::string comm_id, bool load_cached_kernels):
+node_rank(node_rank), local_rank(local_rank), nvcc_compiler(base_path, comm_id, ep_size) {
     // Load all cached kernels from the cache directory
-    jit_dir = get_jit_dir();
+    jit_dir = get_jit_dir(ep_size);
     std::filesystem::create_directories(jit_dir);
     if(load_cached_kernels) {
         for (const auto& entry : std::filesystem::directory_iterator(jit_dir)) {
@@ -454,5 +464,3 @@ void KernelCache::run_combine_kernel(
     // Run the kernel
     func_ptr(param, stream);
 }
-
-
