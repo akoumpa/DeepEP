@@ -9,8 +9,9 @@
 >
 > When `CUDA_HOME` is unavailable, this branch installs an inert Python-only package so dependency
 > resolution and module discovery can run on CPU and macOS hosts. Constructing or using a DeepEP
-> native API still fails fast until the extensions are installed; CUDA hosts retain the normal
-> extension build path unchanged.
+> native API still fails fast until the extensions are installed. CUDA source builds include the
+> toolkit's CCCL headers directly, so the pinned branch can also be installed through PEP 508
+> without an AutoModel-side patch.
 
 DeepEP is a communication library tailored for Mixture-of-Experts (MoE) and expert parallelism (EP). It provides high-throughput and low-latency all-to-all GPU kernels, which are also known as MoE dispatch and combine. The library also supports low-precision operations, including FP8.
 
