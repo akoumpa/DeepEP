@@ -1,5 +1,12 @@
 # DeepEP
 
+> [!NOTE]
+> This fork's `main` branch tracks the HybridEP implementation from
+> [deepseek-ai/DeepEP#673](https://github.com/deepseek-ai/DeepEP/pull/673) at `936e059c`, plus the
+> routing all-gather buffer reuse optimization in `0e715718`. It intentionally differs from
+> [upstream `main`](https://github.com/deepseek-ai/DeepEP) and remains focused on the HybridEP path
+> used by NeMo AutoModel's H100 EP64 workload.
+
 DeepEP is a communication library tailored for Mixture-of-Experts (MoE) and expert parallelism (EP). It provides high-throughput and low-latency all-to-all GPU kernels, which are also known as MoE dispatch and combine. The library also supports low-precision operations, including FP8.
 
 To align with the group-limited gating algorithm proposed in the [DeepSeek-V3](https://github.com/deepseek-ai/DeepSeek-V3) paper, DeepEP offers a set of kernels optimized for asymmetric-domain bandwidth forwarding, such as forwarding data from NVLink domain to RDMA domain. These kernels deliver high throughput, making them suitable for both training and inference prefilling tasks. Additionally, they support SM (Streaming Multiprocessors) number control.
