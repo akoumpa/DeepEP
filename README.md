@@ -6,6 +6,9 @@
 > routing all-gather buffer reuse optimization in `0e715718`. It intentionally differs from
 > [upstream `main`](https://github.com/deepseek-ai/DeepEP) and remains focused on the HybridEP path
 > used by NeMo AutoModel's H100 EP64 workload.
+> The sparse probability communication changes from `62f7232f` and `db9880bd` are intentionally
+> reverted to preserve the dense probability and gradient layout—and therefore training loss
+> parity—used by AutoModel. PR 673's compact routing, API behavior, and other optimizations remain.
 >
 > When `CUDA_HOME` is unavailable, this branch installs an inert Python-only package so dependency
 > resolution and module discovery can run on CPU and macOS hosts. Constructing or using a DeepEP
