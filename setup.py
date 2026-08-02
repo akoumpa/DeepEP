@@ -307,7 +307,9 @@ def get_extension_deep_ep_cpp():
         "csrc/kernels/layout.cu",
         "csrc/kernels/intranode.cu",
     ]
-    include_dirs = ["csrc/"]
+    # CUDA 13 packages libcudacxx/CCCL under include/cccl instead of adding it
+    # to the compiler search path automatically.
+    include_dirs = ["csrc/", os.path.join(CUDA_HOME, "include", "cccl")]
     library_dirs = []
     nvcc_dlink = []
     extra_link_args = ["-lcuda"]
@@ -422,7 +424,7 @@ if __name__ == "__main__":
         version="1.2.1" + revision,
         packages=setuptools.find_packages(include=["deep_ep"]),
         install_requires=[
-            "pynvml",
+            "nvidia-ml-py>=12.0.0",
         ],
         ext_modules=ext_modules,
         cmdclass=cmdclass,
