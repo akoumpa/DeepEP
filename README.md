@@ -6,6 +6,10 @@
 > routing all-gather buffer reuse optimization in `0e715718`. It intentionally differs from
 > [upstream `main`](https://github.com/deepseek-ai/DeepEP) and remains focused on the HybridEP path
 > used by NeMo AutoModel's H100 EP64 workload.
+>
+> When `CUDA_HOME` is unavailable, this branch installs an inert Python-only package so dependency
+> resolution can run on CPU and macOS hosts. DeepEP API access still fails fast until the native
+> extensions are installed; CUDA hosts retain the normal extension build path unchanged.
 
 DeepEP is a communication library tailored for Mixture-of-Experts (MoE) and expert parallelism (EP). It provides high-throughput and low-latency all-to-all GPU kernels, which are also known as MoE dispatch and combine. The library also supports low-precision operations, including FP8.
 

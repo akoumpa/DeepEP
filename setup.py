@@ -7,7 +7,31 @@ import shutil
 import re
 
 from pathlib import Path
-from torch.utils.cpp_extension import BuildExtension, CUDAExtension
+from torch.utils.cpp_extension import BuildExtension, CUDAExtension, CUDA_HOME
+
+
+def should_build_native_extensions():
+    """Return whether the CUDA extensions should be built.
+
+    ``auto`` keeps the normal CUDA build whenever a toolkit is available and
+    falls back to an importable Python-only package on no-CUDA hosts. The
+    explicit modes are useful for validating either packaging path.
+    """
+    mode = os.getenv('DEEPEP_BUILD_EXTENSIONS', 'auto').strip().lower()
+    if mode not in {'auto', '0', '1', 'false', 'true', 'no', 'yes', 'off', 'on'}:
+        raise ValueError(
+            'DEEPEP_BUILD_EXTENSIONS must be auto, 0/1, false/true, no/yes, or off/on'
+        )
+
+    if mode in {'0', 'false', 'no', 'off'}:
+        return False
+    if mode in {'1', 'true', 'yes', 'on'}:
+        if CUDA_HOME is None:
+            raise RuntimeError(
+                'DEEPEP_BUILD_EXTENSIONS requests CUDA extensions, but CUDA_HOME is unavailable'
+            )
+        return True
+    return CUDA_HOME is not None
 
 
 def collect_package_files(package: str, relative_dir: str):
@@ -314,6 +338,21 @@ if __name__ == '__main__':
     except Exception as _:
         revision = ''
 
+    build_native_extensions = should_build_native_extensions()
+    if build_native_extensions:
+        ext_modules = [
+            get_extension_deep_ep_cpp(),
+            get_extension_hybrid_ep_cpp()
+        ]
+        cmdclass = {'build_ext': BuildExtension}
+    else:
+        print(
+            'CUDA toolkit not found or native builds explicitly disabled; '
+            'installing DeepEP without CUDA extensions.'
+        )
+        ext_modules = []
+        cmdclass = {}
+
     setuptools.setup(
         name='deep_ep',
         version='1.2.1' + revision,
@@ -323,13 +362,8 @@ if __name__ == '__main__':
         install_requires=[
             'pynvml',
         ],
-        ext_modules=[
-            get_extension_deep_ep_cpp(),
-            get_extension_hybrid_ep_cpp()
-        ],
-        cmdclass={
-            'build_ext': BuildExtension
-        },
+        ext_modules=ext_modules,
+        cmdclass=cmdclass,
         package_data={
             'deep_ep': collect_package_files('deep_ep', 'backend'),
         },
