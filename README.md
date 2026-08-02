@@ -1,5 +1,14 @@
 # DeepEP
 
+> [!NOTE]
+> The `automodel_r0.6.0` branch is based on upstream HybridEP commit `42144303` and adds the
+> routing all-gather buffer reuse patch originally published as `a6acb7e8`. It intentionally does
+> not include [deepseek-ai/DeepEP#673](https://github.com/deepseek-ai/DeepEP/pull/673); that
+> integration is maintained separately.
+>
+> When `CUDA_HOME` is unavailable, this branch installs an inert Python-only package so dependency
+> resolution can run on CPU and macOS hosts. DeepEP API access still fails fast until the native
+> extensions are installed; CUDA hosts retain the normal extension build path unchanged.
 DeepEP is a communication library tailored for Mixture-of-Experts (MoE) and expert parallelism (EP). It provides high-throughput and low-latency all-to-all GPU kernels, which are also known as MoE dispatch and combine. The library also supports low-precision operations, including FP8.
 
 To align with the group-limited gating algorithm proposed in the [DeepSeek-V3](https://github.com/deepseek-ai/DeepSeek-V3) paper, DeepEP offers a set of kernels optimized for asymmetric-domain bandwidth forwarding, such as forwarding data from NVLink domain to RDMA domain. These kernels deliver high throughput, making them suitable for both training and inference prefilling tasks. Additionally, they support SM (Streaming Multiprocessors) number control.
