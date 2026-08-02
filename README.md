@@ -1,7 +1,7 @@
 # DeepEP
 
 > [!NOTE]
-> This fork's `main` branch tracks the HybridEP implementation from
+> The `automodel_r0.6.0` branch tracks the HybridEP implementation from
 > [deepseek-ai/DeepEP#673](https://github.com/deepseek-ai/DeepEP/pull/673) at `936e059c`, plus the
 > routing all-gather buffer reuse optimization in `0e715718`. It intentionally differs from
 > [upstream `main`](https://github.com/deepseek-ai/DeepEP) and remains focused on the HybridEP path
