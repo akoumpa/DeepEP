@@ -197,6 +197,8 @@ Buffer::Buffer(int rank,
     CUDA_CHECK(cudaHostGetDevicePointer(&moe_recv_expert_counter_mapped, const_cast<int*>(moe_recv_expert_counter), 0));
     for (int i = 0; i < NUM_MAX_LOCAL_EXPERTS; ++ i)
         moe_recv_expert_counter[i] = -1;
+    moe_recv_expert_counter_tensor = torch::empty(
+        {NUM_MAX_LOCAL_EXPERTS}, dtype(torch::kInt32).device(torch::kCUDA));
 
     // MoE RDMA-level counter
     if (num_rdma_ranks > 0) {
@@ -237,6 +239,11 @@ int Buffer::get_root_rdma_rank(bool global) const {
 
 int Buffer::get_local_device_id() const {
     return device_id;
+}
+
+torch::Tensor Buffer::get_num_recv_tokens_per_expert() const {
+    EP_HOST_ASSERT(num_recv_local_experts > 0);
+    return moe_recv_expert_counter_tensor.narrow(0, 0, num_recv_local_experts);
 }
 
 pybind11::bytearray Buffer::get_local_ipc_handle() const {
@@ -574,17 +581,29 @@ Buffer::intranode_dispatch(const torch::Tensor& x, const std::optional<torch::Te
         //  - Size prefix by ranks, shaped as `[num_ranks, num_ranks]`
         //  - Size prefix by experts (not used later), shaped as `[num_ranks, num_local_experts]`
         // NOTES: no more token dropping in this version
-        *moe_recv_counter = -1;
-        for (int i = 0; i < num_local_experts; ++ i)
-            moe_recv_expert_counter[i] = -1;
+        if (num_worst_tokens == 0) {
+            *moe_recv_counter = -1;
+            for (int i = 0; i < num_local_experts; ++ i)
+                moe_recv_expert_counter[i] = -1;
+        }
         EP_HOST_ASSERT(num_ranks * (num_ranks + num_local_experts) * sizeof(int) <= num_nvl_bytes);
-        intranode::notify_dispatch(num_tokens_per_rank->data_ptr<int>(), moe_recv_counter_mapped, num_ranks,
-                                   num_tokens_per_expert->data_ptr<int>(), moe_recv_expert_counter_mapped, num_experts,
+        intranode::notify_dispatch(num_tokens_per_rank->data_ptr<int>(),
+                                   num_worst_tokens > 0 ? nullptr : moe_recv_counter_mapped, num_ranks,
+                                   num_tokens_per_expert->data_ptr<int>(),
+                                   num_worst_tokens > 0 ? nullptr : moe_recv_expert_counter_mapped,
+                                   num_worst_tokens > 0 ? moe_recv_expert_counter_tensor.data_ptr<int>() : nullptr,
+                                   num_experts,
                                    num_tokens, is_token_in_rank.data_ptr<bool>(), channel_prefix_matrix.data_ptr<int>(),
                                    rank_prefix_matrix.data_ptr<int>(),
                                    num_memset_int, expert_alignment,
                                    buffer_ptrs_gpu, barrier_signal_ptrs_gpu, rank,
                                    comm_stream, num_channels);
+
+        // The notify kernel also keeps the expert counts GPU-resident for
+        // capacity-shaped dispatch. The mapped counter remains the source of truth for
+        // the legacy blocking Python-list path.
+        if (num_worst_tokens > 0)
+            num_recv_local_experts = num_local_experts;
 
         if (num_worst_tokens > 0) {
             // No CPU sync, just allocate the worst case
@@ -1928,6 +1947,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         .def("get_rdma_rank", &deep_ep::Buffer::get_rdma_rank)
         .def("get_root_rdma_rank", &deep_ep::Buffer::get_root_rdma_rank)
         .def("get_local_device_id", &deep_ep::Buffer::get_local_device_id)
+        .def("get_num_recv_tokens_per_expert", &deep_ep::Buffer::get_num_recv_tokens_per_expert)
         .def("get_local_ipc_handle", &deep_ep::Buffer::get_local_ipc_handle)
         .def("get_local_nvshmem_unique_id", &deep_ep::Buffer::get_local_nvshmem_unique_id)
         .def("get_local_buffer_tensor", &deep_ep::Buffer::get_local_buffer_tensor)

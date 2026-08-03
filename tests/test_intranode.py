@@ -147,6 +147,16 @@ def test_main(args: argparse.Namespace, num_sms: int, local_rank: int, num_ranks
                         assert torch.equal(recv_topk_weights_clone, recv_worst_topk_weights[:recv_x.size(0)])
                         assert torch.all(recv_worst_topk_idx[recv_x.size(0):] == -1).item()
 
+                        dispatch_args.update({'return_recv_tokens_per_expert_tensor': True})
+                        _, _, _, recv_num_tokens_per_expert, _, event = buffer.dispatch(**dispatch_args)
+                        event.current_stream_wait() if async_mode else ()
+                        assert recv_num_tokens_per_expert.is_cuda
+                        assert recv_num_tokens_per_expert.dtype == torch.int32
+                        assert torch.equal(
+                            recv_num_tokens_per_expert,
+                            gbl_num_tokens_per_expert.view(num_ranks, -1)[rank],
+                        )
+
                     # Test cached dispatch (must without top-k staffs)
                     if not with_topk:
                         dispatch_args = {'x': current_x, 'handle': handle, 'config': config, 'async_finish': async_mode}

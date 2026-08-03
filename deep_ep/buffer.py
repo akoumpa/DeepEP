@@ -316,11 +316,12 @@ class Buffer:
                  is_token_in_rank: Optional[torch.Tensor] = None, num_tokens_per_expert: Optional[torch.Tensor] = None,
                  topk_idx: Optional[torch.Tensor] = None, topk_weights: Optional[torch.Tensor] = None,
                  expert_alignment: int = 1, num_worst_tokens: int = 0,
+                 return_recv_tokens_per_expert_tensor: bool = False,
                  config: Optional[Config] = None,
                  previous_event: Optional[EventOverlap] = None, async_finish: bool = False,
                  allocate_on_comm_stream: bool = False) -> \
             Tuple[Union[Tuple[torch.Tensor, torch.Tensor], torch.Tensor, Tuple[torch.Tensor, torch.Tensor, torch.Tensor]],
-                  Optional[torch.Tensor], Optional[torch.Tensor], List[int], Tuple, EventOverlap]:
+                  Optional[torch.Tensor], Optional[torch.Tensor], Union[List[int], torch.Tensor], Tuple, EventOverlap]:
         """
         Dispatch tokens to different ranks, both intranode and internode settings are supported.
         Intranode kernels require all the ranks should be visible via NVLink.
@@ -348,6 +349,8 @@ class Buffer:
             expert_alignment: align the number of tokens received by each local expert to this variable.
             num_worst_tokens: the worst number of tokens to receive, if specified, there will be no CPU sync, and it
                 will be CUDA-graph compatible. Please also notice that this flag is for intranode only.
+            return_recv_tokens_per_expert_tensor: return the received per-expert counts as a CUDA tensor instead of
+                a Python list. This requires `num_worst_tokens > 0` and avoids synchronizing the host.
             config: the performance tuning config.
             previous_event: the event to wait before actually executing the kernel.
             async_finish: the current stream will not wait for the communication kernels to be finished if set.
@@ -366,6 +369,10 @@ class Buffer:
         """
         # Default config
         config = self.get_dispatch_config(self.group_size) if config is None else config
+        if return_recv_tokens_per_expert_tensor:
+            assert num_worst_tokens > 0, (
+                '`return_recv_tokens_per_expert_tensor=True` requires `num_worst_tokens > 0`'
+            )
 
         # Normal mode w/o NVLink
         if self.disable_nvlink_for_normal_mode:
@@ -411,6 +418,8 @@ class Buffer:
             handle = (rank_prefix_matrix, channel_prefix_matrix, recv_channel_prefix_matrix, recv_src_idx, is_token_in_rank, send_head)
             if x_scales is not None:
                 recv_x = (recv_x, recv_x_scales, recv_x_sf_scale_for_nvfp4) if use_nvfp4 else (recv_x, recv_x_scales)
+            if return_recv_tokens_per_expert_tensor:
+                num_recv_tokens_per_expert_list = self.runtime.get_num_recv_tokens_per_expert()
             return recv_x, recv_topk_idx, recv_topk_weights, num_recv_tokens_per_expert_list, handle, EventOverlap(event)
 
     # noinspection PyTypeChecker

@@ -11,7 +11,8 @@ namespace intranode {
 template<int kNumRanks>
 __global__ void
 notify_dispatch(const int* num_tokens_per_rank, int* moe_recv_counter_mapped,
-                const int* num_tokens_per_expert, int* moe_recv_expert_counter_mapped, int num_experts,
+                const int* num_tokens_per_expert, int* moe_recv_expert_counter_mapped,
+                int* moe_recv_expert_counter_tensor, int num_experts,
                 int num_tokens, int num_channels, const bool* is_token_in_rank, int* channel_prefix_matrix,
                 int* rank_prefix_matrix_copy, int num_memset_int, int expert_alignment,
                 void** buffer_ptrs, int** barrier_signal_ptrs, int rank) {
@@ -50,7 +51,7 @@ notify_dispatch(const int* num_tokens_per_rank, int* moe_recv_counter_mapped,
             #pragma unroll
             for (int i = 1; i < kNumRanks; ++ i)
                 local_per_rank_buffer[i * kNumRanks + thread_id] += local_per_rank_buffer[(i - 1) * kNumRanks + thread_id];
-            if (thread_id == rank)
+            if (thread_id == rank and moe_recv_counter_mapped != nullptr)
                 *moe_recv_counter_mapped = local_per_rank_buffer[(kNumRanks - 1) * kNumRanks + rank];
         }
 
@@ -62,7 +63,10 @@ notify_dispatch(const int* num_tokens_per_rank, int* moe_recv_counter_mapped,
             for (int i = 0; i < kNumRanks; ++ i)
                 sum += local_per_expert_buffer[i * num_experts_per_rank + thread_id];
             sum = (sum + expert_alignment - 1) / expert_alignment * expert_alignment;
-            moe_recv_expert_counter_mapped[thread_id] = sum;
+            if (moe_recv_expert_counter_mapped != nullptr)
+                moe_recv_expert_counter_mapped[thread_id] = sum;
+            if (moe_recv_expert_counter_tensor != nullptr)
+                moe_recv_expert_counter_tensor[thread_id] = sum;
         }
         __syncthreads();
 
@@ -104,7 +108,8 @@ notify_dispatch(const int* num_tokens_per_rank, int* moe_recv_counter_mapped,
 }
 
 void notify_dispatch(const int* num_tokens_per_rank, int* moe_recv_counter_mapped, int num_ranks,
-                     const int* num_tokens_per_expert, int* moe_recv_expert_counter_mapped, int num_experts,
+                     const int* num_tokens_per_expert, int* moe_recv_expert_counter_mapped,
+                     int* moe_recv_expert_counter_tensor, int num_experts,
                      int num_tokens, const bool* is_token_in_rank, int* channel_prefix_matrix,
                      int* rank_prefix_matrix_copy, int num_memset_int, int expert_alignment,
                      void** buffer_ptrs, int** barrier_signal_ptrs, int rank,
@@ -112,7 +117,7 @@ void notify_dispatch(const int* num_tokens_per_rank, int* moe_recv_counter_mappe
 #define NOTIFY_DISPATCH_LAUNCH_CASE(ranks) \
     LAUNCH_KERNEL(&cfg, notify_dispatch<ranks>, \
         num_tokens_per_rank, moe_recv_counter_mapped, \
-        num_tokens_per_expert, moe_recv_expert_counter_mapped, num_experts, \
+        num_tokens_per_expert, moe_recv_expert_counter_mapped, moe_recv_expert_counter_tensor, num_experts, \
         num_tokens, num_channels, is_token_in_rank, channel_prefix_matrix, \
         rank_prefix_matrix_copy, num_memset_int, expert_alignment, \
         buffer_ptrs, barrier_signal_ptrs, rank); \

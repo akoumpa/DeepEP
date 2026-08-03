@@ -104,6 +104,12 @@ private:
     volatile int* moe_recv_expert_counter = nullptr;
     int* moe_recv_expert_counter_mapped = nullptr;
 
+    // Device-side mirror of the expert counters. Normal intranode dispatch updates this
+    // asynchronously on the communication stream so callers using a worst-case receive
+    // allocation do not need to materialize the counters on the host.
+    torch::Tensor moe_recv_expert_counter_tensor;
+    int num_recv_local_experts = 0;
+
     // Host-side RDMA-level MoE info
     volatile int* moe_recv_rdma_counter = nullptr;
     int* moe_recv_rdma_counter_mapped = nullptr;
@@ -133,6 +139,8 @@ public:
     int get_root_rdma_rank(bool global) const;
 
     int get_local_device_id() const;
+
+    torch::Tensor get_num_recv_tokens_per_expert() const;
 
     pybind11::bytearray get_local_ipc_handle() const;
 
