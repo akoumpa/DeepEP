@@ -25,6 +25,7 @@ TOPK = int(os.environ.get("TOPK", 8))
 HIDDEN_DIM = int(os.environ.get("HIDDEN_DIM", 1024))
 REPEATS = int(os.environ.get("REPEATS", 3))
 SEED = int(os.environ.get("SEED", 1025))
+EXPECTED_NUM_NODES = int(os.environ.get("EXPECTED_NUM_NODES", 0))
 
 
 def assert_equal(label, lhs, rhs):
@@ -208,6 +209,15 @@ def worker(local_rank, num_local_ranks, _args):
         num_local_experts=NUM_LOCAL_EXPERTS,
         enable_custom_allgather=False,
     )
+    if EXPECTED_NUM_NODES:
+        assert buffer_custom.num_of_nodes == EXPECTED_NUM_NODES
+        assert buffer_nccl.num_of_nodes == EXPECTED_NUM_NODES
+    if rank == 0:
+        print(
+            f"TOPOLOGY ranks={world_size}, nodes={buffer_nccl.num_of_nodes}, "
+            f"ranks_per_node={buffer_nccl.num_of_hybrid_ep_ranks_per_nvlink_domain}",
+            flush=True,
+        )
 
     for repeat in range(REPEATS):
         for mode in ("indices", "sparse"):
