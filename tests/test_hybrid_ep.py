@@ -125,7 +125,12 @@ def init_tensor(
     return hidden, probs, scaling_factor, routing_map, topk_idx, topk_weights
 
 
-def test_hybrid_ep_correctness(buffer: deep_ep.HybridEPBuffer, ref: TorchRef, use_fp8: bool):
+def test_hybrid_ep_correctness(
+    buffer: deep_ep.HybridEPBuffer,
+    ref: TorchRef,
+    use_fp8: bool,
+    assert_dense_prob_zero_fill: bool = False,
+):
     hidden, probs, scaling_factor, routing_map, topk_idx, topk_weights  = init_tensor(
         hidden_dim=HIDDEN_DIM,
         seq_len=NUM_TOKENS_PER_RANK,
@@ -178,6 +183,7 @@ def test_hybrid_ep_correctness(buffer: deep_ep.HybridEPBuffer, ref: TorchRef, us
             if dispatched_probs_dense is not None and dispatched_probs_ref is not None:
                 start, end = ref._local_expert_range_per_node()
                 assert_bitwise_equal("Dispatch probs", dispatched_probs_ref, dispatched_probs_dense[:, start:end], context)
+
                 masked_probs = torch.zeros_like(dispatched_probs_dense)
                 masked_probs[:, start:end] = dispatched_probs_dense[:, start:end]
                 dispatched_probs_dense = masked_probs
@@ -189,6 +195,51 @@ def test_hybrid_ep_correctness(buffer: deep_ep.HybridEPBuffer, ref: TorchRef, us
             ]
             copy_times = local_expert_routing_map.sum(dim=1)
             hidden_to_combine = dispatched_hidden_dense.to(torch.bfloat16) * copy_times.unsqueeze(1)
+
+            # With shared buffers, combine's dense probability input aliases the next
+            # dispatch's dense probability output. Fill it with a sentinel through the
+            # real combine API, then verify sparse dispatch does not expose untouched
+            # columns from the preceding operation.
+            if routing_label == "sparse routing" and with_probs:
+                poison_probs = torch.full_like(dispatched_probs_dense, 12345.0)
+                buffer.combine(hidden_to_combine, poison_probs, handle_dense)
+                (
+                    dispatched_hidden_dense,
+                    dispatched_probs_after_poison,
+                    dispatched_scaling_factor_dense,
+                    handle_dense,
+                ) = buffer.dispatch(**dispatch_kwargs)
+                torch.cuda.synchronize()
+                start, end = ref._local_expert_range_per_node()
+                assert_bitwise_equal(
+                    "Dispatch probs after shared-buffer poison",
+                    dispatched_probs_ref,
+                    dispatched_probs_after_poison[:, start:end],
+                    context,
+                )
+                off_slice = torch.ones_like(dispatched_probs_after_poison, dtype=torch.bool)
+                off_slice[:, start:end] = False
+                stale = dispatched_probs_after_poison[off_slice]
+                stale_count = torch.count_nonzero(stale == 12345.0).item()
+                print(
+                    f"[rank {dist.get_rank()}] shared-buffer dense dispatch poison: "
+                    f"{stale_count}/{stale.numel()} stale off-slice values{context}",
+                    flush=True,
+                )
+                if assert_dense_prob_zero_fill:
+                    assert stale_count == 0, (
+                        f"Dispatch probs retained {stale_count}/{stale.numel()} poisoned "
+                        f"off-slice values from combine{context}"
+                    )
+                dispatched_probs_dense = torch.zeros_like(dispatched_probs_after_poison)
+                dispatched_probs_dense[:, start:end] = dispatched_probs_after_poison[:, start:end]
+
+                _, _, _, num_dispatched_tokens, local_expert_routing_map, _, _ = handle_dense
+                num_dispatched_tokens = num_dispatched_tokens.cpu()
+                local_expert_routing_map = local_expert_routing_map[:num_dispatched_tokens.item()]
+                copy_times = local_expert_routing_map.sum(dim=1)
+                hidden_to_combine = dispatched_hidden_dense.to(torch.bfloat16) * copy_times.unsqueeze(1)
+
             combined_hidden, combined_probs = buffer.combine(
                 hidden_to_combine, dispatched_probs_dense, handle_dense
             )
@@ -274,6 +325,44 @@ def test_hybrid_ep_correctness(buffer: deep_ep.HybridEPBuffer, ref: TorchRef, us
                 ), f"Combine+unpermute hidden mismatch{context}"
                 if combined_probs is not None and probs is not None:
                     assert_bitwise_equal("Combine+unpermute probs", probs, combined_probs, context)
+
+                if routing_label == "sparse routing" and with_probs:
+                    # Stress the actual AutoModel path. Unpermute a sentinel into the
+                    # shared dense buffer, then verify that the next permuted dispatch
+                    # selects only values freshly written for mapped local experts.
+                    poison_permuted_probs = torch.full_like(dispatched_probs, 12345.0)
+                    buffer.combine_with_unpermute(
+                        hidden=dispatched_hidden.to(torch.bfloat16),
+                        probs=poison_permuted_probs,
+                        handle=handle,
+                        pad_multiple=PAD_MULTIPLE,
+                        fuse_unpermute_combine=fuse_permute_dispatch,
+                    )
+                    (
+                        dispatched_hidden_after_poison,
+                        dispatched_probs_after_poison,
+                        dispatched_scaling_after_poison,
+                        _,
+                        _,
+                    ) = buffer.dispatch_with_permute(**dispatch_kwargs)
+                    assert_bitwise_equal(
+                        "Dispatch+permute hidden after shared-buffer poison",
+                        dispatched_hidden_ref,
+                        dispatched_hidden_after_poison,
+                        context,
+                    )
+                    assert_bitwise_equal(
+                        "Dispatch+permute probs after shared-buffer poison",
+                        dispatched_probs_ref,
+                        dispatched_probs_after_poison,
+                        context,
+                    )
+                    assert_bitwise_equal(
+                        "Dispatch+permute scaling after shared-buffer poison",
+                        dispatched_scaling_factor_ref,
+                        dispatched_scaling_after_poison,
+                        context,
+                    )
 
             dist.barrier()
             if dist.get_rank() == 0:
@@ -559,8 +648,14 @@ def test_main(local_rank: int, num_local_ranks: int, args: argparse.Namespace):
                 num_of_ranks_per_node=NUM_OF_RANKS_PER_NODE,
             )
 
-            test_hybrid_ep_correctness(buffer, ref, use_fp8)
-            test_hybrid_ep_benchmark(buffer, group, use_fp8, args.nsys_profile)
+            test_hybrid_ep_correctness(
+                buffer,
+                ref,
+                use_fp8,
+                assert_dense_prob_zero_fill=args.assert_dense_prob_zero_fill,
+            )
+            if not args.correctness_only:
+                test_hybrid_ep_benchmark(buffer, group, use_fp8, args.nsys_profile)
     dist.barrier()
     dist.destroy_process_group()
 
@@ -572,5 +667,9 @@ if __name__ == "__main__":
                        help='benchmark with nsys profile or not (default: False)')
     parser.add_argument('--only-bf16', action='store_true', default=False,
                        help='Skip FP8 tests, only run BF16 (default: False)')
+    parser.add_argument('--correctness-only', action='store_true', default=False,
+                       help='Skip benchmarks after the correctness checks')
+    parser.add_argument('--assert-dense-prob-zero-fill', action='store_true', default=False,
+                       help='Fail if non-permute dispatch exposes stale off-slice probabilities')
     args = parser.parse_args()
     torch.multiprocessing.spawn(test_main, args=(args.num_processes, args), nprocs=args.num_processes)
