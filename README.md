@@ -1,11 +1,13 @@
 # DeepEP
 
 > [!NOTE]
-> The `automodel_r0.6.0` branch tracks the HybridEP implementation from
-> [deepseek-ai/DeepEP#673](https://github.com/deepseek-ai/DeepEP/pull/673) at `936e059c`, plus the
-> routing all-gather buffer reuse optimization in `0e715718`. It intentionally differs from
-> [upstream `main`](https://github.com/deepseek-ai/DeepEP) and remains focused on the HybridEP path
-> used by NeMo AutoModel's H100 EP64 workload.
+> The `automodel_r0.6.0-pr673-upstream` branch tracks upstream
+> [`hybrid-ep`](https://github.com/deepseek-ai/DeepEP/tree/hybrid-ep) at `58397eac`, which already
+> contains the merged [deepseek-ai/DeepEP#673](https://github.com/deepseek-ai/DeepEP/pull/673)
+> compact top-k routing scan path. The only runtime delta from that upstream base is the routing
+> all-gather buffer reuse in [#716](https://github.com/deepseek-ai/DeepEP/pull/716), which is still
+> under review upstream. Everything else on this branch is packaging-only. It remains focused on the
+> HybridEP path used by NeMo AutoModel's H100 EP64 workload.
 >
 > When `CUDA_HOME` is unavailable, this branch installs an inert Python-only package so dependency
 > resolution and module discovery can run on CPU and macOS hosts. Constructing or using a DeepEP
